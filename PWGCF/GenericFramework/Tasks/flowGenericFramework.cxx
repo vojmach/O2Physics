@@ -9,8 +9,6 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-// silly little comment
-
 #include <CCDB/BasicCCDBManager.h>
 #include <DataFormatsParameters/GRPObject.h>
 #include <DataFormatsParameters/GRPMagField.h>
