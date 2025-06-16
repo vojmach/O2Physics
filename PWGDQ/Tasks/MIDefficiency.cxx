@@ -1,4 +1,4 @@
-// Copyright 2019-2024 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -260,7 +260,7 @@ struct midEfficiency {
           if (isPbPb)
             histos.fill(HIST("hSparseCentFiredBothperRPC"), deId, cent, pt, eta, phi);
           else
-            histos.fill(HIST("hSparseCentFiredNBPperRPC"), deId, pt, eta, phi);
+            histos.fill(HIST("hSparseCentFiredBothperRPC"), deId, pt, eta, phi);
         }
 
         if (effFlag < 3) {

@@ -11,35 +11,39 @@
 //
 // Build hypertriton candidates from V0s and tracks
 
-#include <array>
+#include "PWGLF/DataModel/EPCalibrationTables.h"
+#include "PWGLF/DataModel/LFHypernucleiTables.h"
+#include "PWGLF/Utils/svPoolCreator.h"
 
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
-#include "ReconstructionDataFormats/Track.h"
+#include "Common/Core/PID/PIDTOF.h"
+#include "Common/Core/PID/TPCPIDResponse.h"
 #include "Common/Core/RecoDecay.h"
 #include "Common/Core/trackUtilities.h"
+#include "Common/DataModel/Centrality.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/Multiplicity.h"
-#include "Common/DataModel/Centrality.h"
-#include "PWGLF/DataModel/EPCalibrationTables.h"
-#include "DetectorsBase/Propagator.h"
-#include "DetectorsBase/GeometryManager.h"
-#include "DataFormatsParameters/GRPObject.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "CCDB/BasicCCDBManager.h"
-
+#include "Common/TableProducer/PID/pidTOFBase.h"
 #include "EventFiltering/Zorro.h"
 #include "EventFiltering/ZorroSummary.h"
 
-#include "Common/Core/PID/TPCPIDResponse.h"
-#include "Common/Core/PID/PIDTOF.h"
-#include "Common/TableProducer/PID/pidTOFBase.h"
-#include "DataFormatsTPC/BetheBlochAleph.h"
+#include "CCDB/BasicCCDBManager.h"
 #include "DCAFitter/DCAFitterN.h"
-#include "PWGLF/Utils/svPoolCreator.h"
-#include "PWGLF/DataModel/LFHypernucleiTables.h"
+#include "DataFormatsParameters/GRPMagField.h"
+#include "DataFormatsParameters/GRPObject.h"
+#include "DataFormatsTPC/BetheBlochAleph.h"
+#include "DetectorsBase/GeometryManager.h"
+#include "DetectorsBase/Propagator.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+#include "ReconstructionDataFormats/Track.h"
+
+#include <algorithm>
+#include <array>
+#include <memory>
+#include <string>
+#include <vector>
 
 using namespace o2;
 using namespace o2::framework;
@@ -58,6 +62,7 @@ constexpr double betheBlochDefault[1][6]{{-1.e32, -1.e32, -1.e32, -1.e32, -1.e32
 static const std::vector<std::string> betheBlochParNames{"p0", "p1", "p2", "p3", "p4", "resolution"};
 static const std::vector<std::string> particleName{"He3"};
 std::shared_ptr<TH1> hEvents;
+std::shared_ptr<TH1> hEventsZorro;
 std::shared_ptr<TH1> hZvtx;
 std::shared_ptr<TH1> hCentFT0A;
 std::shared_ptr<TH1> hCentFT0C;
@@ -150,12 +155,11 @@ struct hyperRecoTask {
   Configurable<float> nTPCClusMinPi{"nTPCClusMinPi", -1., "pion NTPC clusters cut"};
   Configurable<bool> mcSignalOnly{"mcSignalOnly", true, "If true, save only signal in MC"};
   Configurable<bool> cfgSkimmedProcessing{"cfgSkimmedProcessing", false, "Skimmed dataset processing"};
+  Configurable<bool> isEventUsedForEPCalibration{"isEventUsedForEPCalibration", 1, "Event is used for EP calibration"};
 
   // Define o2 fitter, 2-prong, active memory (no need to redefine per event)
   o2::vertexing::DCAFitterN<2> fitter;
   svPoolCreator svCreator{heDauPdg, 211};
-
-  o2::pid::tof::Beta<TracksFull::iterator> responseBeta;
 
   // daughter masses
   float he3Mass = o2::constants::physics::MassHelium3;
@@ -164,6 +168,7 @@ struct hyperRecoTask {
 
   Configurable<bool> useCustomVertexer{"useCustomVertexer", false, "Use custom vertexer"};
   Configurable<bool> skipAmbiTracks{"skipAmbiTracks", false, "Skip ambiguous tracks"};
+  Configurable<bool> disableITSROFCut{"disableITSROFCut", false, "Disable ITS ROC cut for event selection"};
   Configurable<float> customVertexerTimeMargin{"customVertexerTimeMargin", 800, "Time margin for custom vertexer (ns)"};
   Configurable<LabeledArray<double>> cfgBetheBlochParams{"cfgBetheBlochParams", {betheBlochDefault[0], 1, 6, particleName, betheBlochParNames}, "TPC Bethe-Bloch parameterisation for He3"};
   Configurable<bool> cfgCompensatePIDinTracking{"cfgCompensatePIDinTracking", true, "If true, divide tpcInnerParam by the electric charge"};
@@ -245,11 +250,15 @@ struct hyperRecoTask {
     hH4LMassBefSel = qaRegistry.add<TH1>("hH4LMassBefSel", ";M (GeV/#it{c}^{2}); ", HistType::kTH1D, {{60, 3.76, 3.84}});
     hH4LMassTracked = qaRegistry.add<TH1>("hH4LMassTracked", ";M (GeV/#it{c}^{2}); ", HistType::kTH1D, {{60, 3.76, 3.84}});
 
-    hEvents = qaRegistry.add<TH1>("hEvents", ";Events; ", HistType::kTH1D, {{3, -0.5, 2.5}});
+    hEvents = qaRegistry.add<TH1>("hEvents", ";Events; ", HistType::kTH1D, {{2, -0.5, 1.5}});
     hEvents->GetXaxis()->SetBinLabel(1, "All");
     hEvents->GetXaxis()->SetBinLabel(2, "Selected");
-    hEvents->GetXaxis()->SetBinLabel(3, "Zorro He events");
-    if (doprocessMC) {
+
+    hEventsZorro = qaRegistry.add<TH1>("hEventsZorro", ";Events; ", HistType::kTH1D, {{2, -0.5, 1.5}});
+    hEventsZorro->GetXaxis()->SetBinLabel(1, "Zorro before evsel");
+    hEventsZorro->GetXaxis()->SetBinLabel(2, "Zorro after evsel");
+
+    if (doprocessMC || doprocessMCTracked) {
       hDecayChannel = qaRegistry.add<TH1>("hDecayChannel", ";Decay channel; ", HistType::kTH1D, {{2, -0.5, 1.5}});
       hDecayChannel->GetXaxis()->SetBinLabel(1, "2-body");
       hDecayChannel->GetXaxis()->SetBinLabel(2, "3-body");
@@ -333,15 +342,25 @@ struct hyperRecoTask {
       initCCDB(bc);
       hEvents->Fill(0.);
 
-      if (!collision.sel8() || std::abs(collision.posZ()) > 10) {
+      if (!collision.selection_bit(aod::evsel::kNoITSROFrameBorder) && !disableITSROFCut) {
         continue;
       }
 
+      bool zorroSelected = false;
       if (cfgSkimmedProcessing) {
-        bool zorroSelected = zorro.isSelected(collision.template bc_as<aod::BCsWithTimestamps>().globalBC()); /// Just let Zorro do the accounting
+        // accounting done after ITS border cut, to properly correct with the MC
+        zorroSelected = zorro.isSelected(collision.template bc_as<aod::BCsWithTimestamps>().globalBC());
         if (zorroSelected) {
-          hEvents->Fill(2.);
+          hEventsZorro->Fill(0.);
         }
+      }
+
+      if (!collision.selection_bit(aod::evsel::kIsTriggerTVX) || !collision.selection_bit(aod::evsel::kNoTimeFrameBorder) || std::abs(collision.posZ()) > 10) {
+        continue;
+      }
+
+      if (zorroSelected) {
+        hEventsZorro->Fill(1.);
       }
 
       goodCollision[collision.globalIndex()] = true;
@@ -489,7 +508,7 @@ struct hyperRecoTask {
     }
 
     // if survived all selections, propagate decay daughters to PV
-    gpu::gpustd::array<float, 2> dcaInfo;
+    std::array<float, 2> dcaInfo;
     o2::base::Propagator::Instance()->propagateToDCABxByBz({collision.posX(), collision.posY(), collision.posZ()}, heTrackCov, 2.f, fitter.getMatCorrType(), &dcaInfo);
     hypCand.he3DCAXY = dcaInfo[0];
     o2::base::Propagator::Instance()->propagateToDCABxByBz({collision.posX(), collision.posY(), collision.posZ()}, piTrackCov, 2.f, fitter.getMatCorrType(), &dcaInfo);
@@ -506,7 +525,7 @@ struct hyperRecoTask {
     hypCand.collisionID = collision.globalIndex();
 
     if (heTrack.hasTOF()) {
-      float beta = responseBeta.GetBeta(heTrack);
+      float beta = o2::pid::tof::Beta::GetBeta(heTrack);
       beta = std::min(1.f - 1.e-6f, std::max(1.e-4f, beta)); /// sometimes beta > 1 or < 0, to be checked
       hypCand.massTOFHe3 = hypCand.momHe3TPC * 2.f * std::sqrt(1.f / (beta * beta) - 1.f);
     }
@@ -682,10 +701,13 @@ struct hyperRecoTask {
 
     for (auto& hypCand : hyperCandidates) {
       auto collision = collisions.rawIteratorAt(hypCand.collisionID);
+      if (isEventUsedForEPCalibration && !collision.triggereventep()) {
+        return;
+      }
       float trackedHypClSize = !trackedClSize.empty() ? trackedClSize[hypCand.v0ID] : 0;
       outputDataTableWithFlow(collision.centFT0A(), collision.centFT0C(), collision.centFT0M(),
                               collision.psiFT0A(), collision.multFT0A(),
-                              collision.psiFT0C(), collision.multFT0C(),
+                              collision.psiFT0C(), collision.multFT0C(), collision.qFT0C(),
                               collision.psiTPC(), collision.multTPC(),
                               collision.posX(), collision.posY(), collision.posZ(),
                               hypCand.isMatter,

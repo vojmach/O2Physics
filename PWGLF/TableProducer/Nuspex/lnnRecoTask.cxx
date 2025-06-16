@@ -12,6 +12,11 @@
 // Build \Lambda-n-n candidates from V0s and tracks
 // ==============================================================================
 #include <array>
+#include <memory>
+#include <string>
+#include <vector>
+#include <algorithm>
+
 #include <TLorentzVector.h>
 
 #include "Framework/runDataProcessing.h"
@@ -77,7 +82,6 @@ std::shared_ptr<TH1> hIsMatterGenTwoBody;
 std::shared_ptr<TH2> hDCAxy3H;
 std::shared_ptr<TH1> hLnnCandLoss;
 std::shared_ptr<TH2> hNSigma3HTPC_preselection;
-std::shared_ptr<TH2> hNSigma3HTOF_preselection;
 
 float alphaAP(std::array<float, 3> const& momB, std::array<float, 3> const& momC)
 {
@@ -154,10 +158,11 @@ struct lnnRecoTask {
   Configurable<float> TPCRigidityMin3H{"TPCRigidityMin3H", 0.2, "Minimum rigidity of the triton candidate"};
   Configurable<float> nSigmaCutMinTPC{"nSigmaCutMinTPC", -5, "triton dEdx cut (n sigma)"};
   Configurable<float> nSigmaCutMaxTPC{"nSigmaCutMaxTPC", 5, "triton dEdx cut (n sigma)"};
-  Configurable<float> nSigmaCutTOF{"nSigmaCutMinTOF", 3, "triton TOF cut (n sigma)"};
   Configurable<float> nTPCClusMin3H{"nTPCClusMin3H", 80, "triton NTPC clusters cut"};
+  Configurable<float> nTPCClusMinPi{"nTPCClusMinPi", 60, "pion NTPC clusters cut"};
   Configurable<float> ptMinTOF{"ptMinTOF", 0.8, "minimum pt for TOF cut"};
   Configurable<float> TrTOFMass2Cut{"TrTOFMass2Cut", 5.5, "minimum Triton mass square to TOF"};
+  Configurable<float> BetaTrTOF{"BetaTrTOF", 0.4, "minimum beta TOF cut"};
   Configurable<bool> mcSignalOnly{"mcSignalOnly", true, "If true, save only signal in MC"};
 
   // Define o2 fitter, 2-prong, active memory (no need to redefine per event)
@@ -203,6 +208,7 @@ struct lnnRecoTask {
   std::vector<unsigned int> filledMothers;
   // vector to keep track of the collisions passing the event selection in the MC
   std::vector<bool> isGoodCollision;
+  std::vector<float> collisionFT0Ccent;
   // vector to armazenade h3Track
 
   Preslice<aod::V0s> perCollision = o2::aod::v0::collisionId;
@@ -257,7 +263,6 @@ struct lnnRecoTask {
     hEvents = qaRegistry.add<TH1>("hEvents", ";Events; ", HistType::kTH1D, {{2, -0.5, 1.5}});
     hLnnCandLoss = qaRegistry.add<TH1>("hLnnCandLoss", ";CandLoss; ", HistType::kTH1D, {{7, -0.5, 6.5}});
     hNSigma3HTPC_preselection = qaRegistry.add<TH2>("hNSigma3HTPC_preselection", "#it{p}/z (GeV/#it{c}); n#sigma_{TPC}(^{3}H)", HistType::kTH2F, {rigidityAxis, nSigma3HAxis});
-    hNSigma3HTOF_preselection = qaRegistry.add<TH2>("hNSigma3HTOF_preselection", "; Signed p({}^{3}H) (GeV/#it{c^2}); n#sigma_{TOF} ({}^{3}H)", HistType::kTH2F, {TritMomAxis, nSigma3HAxis});
 
     hEvents->GetXaxis()->SetBinLabel(1, "All");
     hEvents->GetXaxis()->SetBinLabel(2, "sel8");
@@ -346,7 +351,8 @@ struct lnnRecoTask {
       auto posTrack = v0.posTrack_as<TracksFull>();
       auto negTrack = v0.negTrack_as<TracksFull>();
 
-      if (std::abs(posTrack.eta()) > etaMax || std::abs(negTrack.eta()) > etaMax) {
+      /// remove tracks wo TPC information, too much bkg for Lnn analysis
+      if (std::abs(posTrack.eta()) > etaMax || std::abs(negTrack.eta()) > etaMax || !posTrack.hasTPC() || !negTrack.hasTPC()) {
         continue;
       }
 
@@ -365,8 +371,8 @@ struct lnnRecoTask {
       hdEdxTot->Fill(-negRigidity, negTrack.tpcSignal());
 
       // ITS only tracks do not have TPC information. TPCnSigma: only lower cut to allow for triton reconstruction
-      bool is3H = posTrack.hasTPC() && nSigmaTPCpos > nSigmaCutMinTPC && nSigmaTPCpos < nSigmaCutMaxTPC;
-      bool isAnti3H = negTrack.hasTPC() && nSigmaTPCneg > nSigmaCutMinTPC && nSigmaTPCneg < nSigmaCutMaxTPC;
+      bool is3H = nSigmaTPCpos > nSigmaCutMinTPC && nSigmaTPCpos < nSigmaCutMaxTPC;
+      bool isAnti3H = nSigmaTPCneg > nSigmaCutMinTPC && nSigmaTPCneg < nSigmaCutMaxTPC;
 
       if (!is3H && !isAnti3H) // discard if both tracks are not 3H candidates
         continue;
@@ -388,13 +394,15 @@ struct lnnRecoTask {
         continue;
       }
       auto& h3track = lnnCand.isMatter ? posTrack : negTrack;
+      auto& pitrack = lnnCand.isMatter ? negTrack : posTrack;
       auto& h3Rigidity = lnnCand.isMatter ? posRigidity : negRigidity;
 
       if (h3Rigidity < TPCRigidityMin3H ||
           h3track.tpcNClsFound() < nTPCClusMin3H ||
           h3track.tpcChi2NCl() < Chi2nClusTPCMin ||
           h3track.tpcChi2NCl() > Chi2nClusTPCMax ||
-          h3track.itsChi2NCl() > Chi2nClusITS) {
+          h3track.itsChi2NCl() > Chi2nClusITS ||
+          pitrack.tpcNClsFound() < nTPCClusMinPi) {
         continue;
       }
 
@@ -422,13 +430,10 @@ struct lnnRecoTask {
         if (!h3track.hasTOF()) {
           continue;
         }
-        hNSigma3HTOF_preselection->Fill(h3track.p(), h3track.tofNSigmaTr());
-        if (std::abs(h3track.tofNSigmaTr()) > nSigmaCutTOF) {
-          continue;
-        }
+
         beta = h3track.beta();
         lnnCand.mass2TrTOF = h3track.mass() * h3track.mass();
-        if (lnnCand.mass2TrTOF < TrTOFMass2Cut) {
+        if (lnnCand.mass2TrTOF < TrTOFMass2Cut || beta < BetaTrTOF) {
           continue;
         }
       }
@@ -503,7 +508,7 @@ struct lnnRecoTask {
       }
 
       // if survived all selections, propagate decay daughters to PV
-      gpu::gpustd::array<float, 2> dcaInfo;
+      std::array<float, 2> dcaInfo;
       o2::base::Propagator::Instance()->propagateToDCABxByBz({collision.posX(), collision.posY(), collision.posZ()}, h3PropTrack, 2.f, fitter.getMatCorrType(), &dcaInfo);
       lnnCand.h3DCAXY = dcaInfo[0];
 
@@ -623,6 +628,8 @@ struct lnnRecoTask {
 
     isGoodCollision.clear();
     isGoodCollision.resize(mcCollisions.size(), false);
+    collisionFT0Ccent.clear();
+    collisionFT0Ccent.resize(mcCollisions.size(), -1.f);
 
     for (const auto& collision : collisions) {
       lnnCandidates.clear();
@@ -643,6 +650,7 @@ struct lnnRecoTask {
 
       if (collision.has_mcCollision()) {
         isGoodCollision[collision.mcCollisionId()] = true;
+        collisionFT0Ccent[collision.mcCollisionId()] = collision.centFT0C();
       }
 
       const uint64_t collIdx = collision.globalIndex();
@@ -727,7 +735,7 @@ struct lnnRecoTask {
       lnnCand.posTrackID = -1;
       lnnCand.negTrackID = -1;
       lnnCand.isSignal = true;
-      outputMCTable(-1, -1, -1,
+      outputMCTable(-1, collisionFT0Ccent[mcPart.mcCollisionId()], -1,
                     -1, -1, -1,
                     0,
                     -1, -1, -1,

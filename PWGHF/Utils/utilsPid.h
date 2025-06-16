@@ -17,15 +17,30 @@
 #ifndef PWGHF_UTILS_UTILSPID_H_
 #define PWGHF_UTILS_UTILSPID_H_
 
-namespace o2::aod
-{
+#include <fairlogger/Logger.h>
 
-namespace pid_tpc_tof_utils
-{
+#include <cstdint>
 
-enum HfProngSpecies : int { Pion = 0,
-                            Kaon,
-                            Proton };
+#include "Common/DataModel/PIDResponseTOF.h"
+#include "Common/DataModel/PIDResponseTPC.h"
+
+namespace o2::aod::pid_tpc_tof_utils
+{
+/// @brief Species of HF-candidate daughter tracks
+enum HfProngSpecies : uint8_t {
+  Pion = 0,
+  Kaon,
+  Proton,
+  NHfProngSpecies
+};
+
+/// @brief PID methods used for HF-candidate daughter tracks
+enum PidMethod {
+  NoPid = 0, // none
+  TpcOrTof,  // TPC or TOF
+  TpcAndTof, // TPC and TOF
+  NPidMethods
+};
 
 /// Function to combine TPC and TOF NSigma
 /// \param tiny switch between full and tiny (binned) PID tables
@@ -35,21 +50,21 @@ enum HfProngSpecies : int { Pion = 0,
 template <bool tiny, typename T1>
 T1 combineNSigma(T1 tpcNSigma, T1 tofNSigma)
 {
-  static constexpr float defaultNSigmaTolerance = .1f;
-  static constexpr float defaultNSigma = -999.f + defaultNSigmaTolerance; // -999.f is the default value set in TPCPIDResponse.h and PIDTOF.h
+  static constexpr float DefaultNSigmaTolerance = .1f;
+  static constexpr float DefaultNSigma = -999.f + DefaultNSigmaTolerance; // -999.f is the default value set in TPCPIDResponse.h and PIDTOF.h
 
   if constexpr (tiny) {
     tpcNSigma *= aod::pidtpc_tiny::binning::bin_width;
     tofNSigma *= aod::pidtof_tiny::binning::bin_width;
   }
 
-  if ((tpcNSigma > defaultNSigma) && (tofNSigma > defaultNSigma)) { // TPC and TOF
+  if ((tpcNSigma > DefaultNSigma) && (tofNSigma > DefaultNSigma)) { // TPC and TOF
     return std::sqrt(.5f * (tpcNSigma * tpcNSigma + tofNSigma * tofNSigma));
   }
-  if (tpcNSigma > defaultNSigma) { // only TPC
+  if (tpcNSigma > DefaultNSigma) { // only TPC
     return std::abs(tpcNSigma);
   }
-  if (tofNSigma > defaultNSigma) { // only TOF
+  if (tofNSigma > DefaultNSigma) { // only TOF
     return std::abs(tofNSigma);
   }
   return tofNSigma; // no TPC nor TOF
@@ -100,9 +115,6 @@ void fillProngPid(TRK const& track, ROW& rowPid)
   // fill candidate prong PID rows
   rowPid(nSigTpc, nSigTof);
 }
-
-} // namespace pid_tpc_tof_utils
-
-} // namespace o2::aod
+} // namespace o2::aod::pid_tpc_tof_utils
 
 #endif // PWGHF_UTILS_UTILSPID_H_
