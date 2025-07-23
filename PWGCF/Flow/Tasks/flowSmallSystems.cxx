@@ -35,41 +35,38 @@ using namespace o2::framework::expressions;
 // A basic event selection is applied.
 
 struct FlowSmallSystems {
-  O2_DEFINE_CONFIGURABLE(cfgPtMin, double, 0.2, "Minimum pt (GeV/c)");
-  O2_DEFINE_CONFIGURABLE(cfgPtMax, double, 10.0, "Maximum pt (GeV/c)");
+  O2_DEFINE_CONFIGURABLE(cfgPtMin, float, 0.2, "Minimum pt (GeV/c)");
+  O2_DEFINE_CONFIGURABLE(cfgPtMax, float, 10, "Maximum pt (GeV/c)");
+  O2_DEFINE_CONFIGURABLE(cfgEta, float, 0.8, "Eta cut");
+  O2_DEFINE_CONFIGURABLE(cfgVtxZ, float, 10, "Vertex cut in z (cm)");
   HistogramRegistry registry{"HistRegistry"};
 
   // Equivalent of the AliRoot task UserCreateOutputObjects
-  void init(InitContext&)
+  void init(InitContext const&)
   {
     // Define your axes
     // Constant bin width axis
-    std::vector<double> ptBinning = {cfgPtMin};
-    while (ptBinning.back() < cfgPtMax)
-    {
-      if (ptBinning.back() < 1.0) {
-        ptBinning.emplace_back(ptBinning.back() + 0.1);
-      } else if (ptBinning.back() < 5.0) {
-        ptBinning.emplace_back(ptBinning.back() + 0.5);
-      } else if (ptBinning.back() < 10.0) {
-        ptBinning.emplace_back(ptBinning.back() + 1.0);
-      } else {
-        ptBinning.emplace_back(ptBinning.back() + 10.0);
-      }
-    }
-    AxisSpec PtAxis = {ptBinning, "#it{p}_{T} (GeV/#it{c})"};
+    std::vector<double> cfgPtBinning = {0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95,
+                                          1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
+                                          2, 2.2, 2.4, 2.6, 2.8,
+                                          3, 3.5, 4, 5, 6,
+                                          8, 10};
+    AxisSpec axisPt = {cfgPtBinning, "#it{p}_{T} (GeV/#it{c})"};
     // Add histograms to histogram manager (as in the output object of in AliPhysics)
-    registry.add("hPt", ";#it{p}_{T} (GeV/#it{c})", HistType::kTH1D, {PtAxis});
-    registry.add("hVtxZ",";z (cm)", HistType::kTH1D, {{160, -20, 20}});
+    registry.add("hPt", ";#it{p}_{T} (GeV/#it{c})", HistType::kTH1D, {axisPt});
+    registry.add("hVtxZ",";z (cm)", HistType::kTH1D, {{120, -20, 20}});
   }
-
+  Filter collisionFilter = nabs(aod::collision::posZ) < cfgVtxZ;
+  Filter trackFilter = nabs(aod::track::eta) < cfgEta && (aod::track::pt > cfgPtMin && aod::track::pt < cfgPtMax);
   // Equivalent of the AliRoot task UserExec
-  void process(aod::Collision const& coll, aod::Tracks const& Tracks)
+  using MyCollision = soa::Filtered<aod::Collisions>;
+  using MyTrack = soa::Filtered<aod::Tracks>;
+
+  void process(MyCollision::iterator const& collision, MyTrack const& Tracks)
   {
     // Performing the event selection
-    registry.fill(HIST("hVtxZ"), coll.posZ());
-
-    for (auto track : Tracks) { // Loop over tracks
+    registry.fill(HIST("hVtxZ"), collision.posZ());
+    for (const auto& track : Tracks) { // Loop over tracks
       registry.fill(HIST("hPt"), track.pt());
     }
   }
