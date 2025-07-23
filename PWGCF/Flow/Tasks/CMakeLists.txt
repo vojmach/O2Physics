@@ -83,14 +83,13 @@ o2physics_add_dpl_workflow(flow-ese-p-he3
                     SOURCES flowEsePHe3.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::GFWCore
                     COMPONENT_NAME Analysis)
-<<<<<<< HEAD
-                    
-o2physics_add_dpl_workflow(flow-small-systems
-                    SOURCES flowSmallSystems.cxx
-=======
 
 o2physics_add_dpl_workflow(flow-ese-task
                     SOURCES flowEseTask.cxx
->>>>>>> 67ecdd517 ([PWGCF] [PWGCF]Add files for ese calculation (#11890))
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::GFWCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(flow-small-systems
+                    SOURCES flowSmallSystems.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::GFWCore
                     COMPONENT_NAME Analysis)
