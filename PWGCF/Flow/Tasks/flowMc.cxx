@@ -313,11 +313,10 @@ struct FlowMc {
     myTrackSel.SetMinNCrossedRowsTPC(cfgCutTPCcrossedrows);
     if (cfgEnableITSCuts)
       myTrackSel.SetMinNClustersITS(cfgCutITSclu);
-    if (!cfgCutDCAzPtDepEnabled){
+    if (!cfgCutDCAzPtDepEnabled) {
       myTrackSel.SetMaxDcaZ(cfgCutDCAz);
-    }
-    else{
-      fPtDepDCAz = new TF1("ptDepDCAxy", Form("[0]*%s", cfgDCAzFunction->c_str()), 0.001, 100); 
+    } else {
+      fPtDepDCAz = new TF1("ptDepDCAxy", Form("[0]*%s", cfgDCAzFunction->c_str()), 0.001, 100);
       fPtDepDCAz->SetParameter(0, cfgDCAzNSigma);
       LOGF(info, "DCAz pt-dependence function: %s", Form("[0]*%s", cfgDCAzFunction->c_str()));
     }
