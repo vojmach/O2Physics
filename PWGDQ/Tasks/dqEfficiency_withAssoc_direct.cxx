@@ -25,6 +25,7 @@
 #include "Common/Core/PID/PIDTOFParamService.h"
 #include "Common/Core/TableHelper.h"
 #include "Common/Core/trackUtilities.h"
+#include "Common/DataModel/Centrality.h"
 #include "Common/DataModel/CollisionAssociationTables.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/McCollisionExtra.h"
@@ -59,6 +60,7 @@
 
 #include <RtypesCore.h>
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -2017,7 +2019,7 @@ struct AnalysisSameEventPairing {
   PresliceUnsorted<aod::McParticles> perReducedMcEvent = aod::mcparticle::mcCollisionId;
 
   // template <int TPairType, typename TEventsMC>
-  template <int TPairType, typename TEvents, typename TEventsMC>
+  template <int TPairType, uint32_t TEventFillMap, typename TEvents, typename TEventsMC>
   void runMCGen(TEvents const& events, TEventsMC const& mcEvents, McParticles const& mcTracks)
   {
     cout << "AnalysisSameEventPairing::runMCGen() called" << endl;
@@ -2053,7 +2055,11 @@ struct AnalysisSameEventPairing {
       eFromJpsiMcParticleIndices.clear();
 
       auto mcCollisionGlobalIndex = event.mcCollisionId();
-      // auto mcEvent = mcEvents.rawIteratorAt(mcCollisionGlobalIndex);
+      auto mcEvent = mcEvents.rawIteratorAt(mcCollisionGlobalIndex);
+
+      // fill event information
+      VarManager::FillEvent<TEventFillMap>(event);
+      VarManager::FillEvent<VarManager::ObjTypes::CollisionMC>(mcEvent);
 
       auto groupedMCTracks = mcTracks.sliceBy(perReducedMcEvent, mcCollisionGlobalIndex);
       groupedMCTracks.bindInternalIndicesTo(&mcTracks);
@@ -2161,7 +2167,7 @@ struct AnalysisSameEventPairing {
   {
     cout << "AnalysisSameEventPairing::processBarrelOnly() called" << endl;
     runSameEventPairing<true, VarManager::kDecayToEE, gkEventFillMapWithMults, gkTrackFillMapWithCov>(events, bcs, trackAssocsPerCollision, barrelAssocs, barrelTracks, mcEvents, mcTracks);
-    runMCGen<VarManager::kDecayToEE>(events, mcEvents, mcTracks);
+    runMCGen<VarManager::kDecayToEE, gkEventFillMapWithMults>(events, mcEvents, mcTracks);
     cout << "AnalysisSameEventPairing::processBarrelOnly() completed" << endl;
   }
 
@@ -2171,7 +2177,7 @@ struct AnalysisSameEventPairing {
   {
     cout << "AnalysisSameEventPairing::processBarrelPbPbOnly() called" << endl;
     runSameEventPairing<true, VarManager::kDecayToEE, gkEventFillMapWithCentAndMults, gkTrackFillMapWithCov>(events, bcs, trackAssocsPerCollision, barrelAssocs, barrelTracks, mcEvents, mcTracks);
-    runMCGen<VarManager::kDecayToEE>(events, mcEvents, mcTracks);
+    runMCGen<VarManager::kDecayToEE, gkEventFillMapWithCentAndMults>(events, mcEvents, mcTracks);
     cout << "AnalysisSameEventPairing::processBarrelPbPbOnly() completed" << endl;
   }
 
